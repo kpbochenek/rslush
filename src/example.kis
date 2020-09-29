@@ -1,0 +1,14 @@
+
+
+fn sum(a: Int, b: Int): Int { a + b }
+
+fn main(args: Array[String]): Unit = {
+  println("Siema!, ale super hehe")
+
+  println("Dziala?, {}", sum(2, 4))
+
+  if sum(2, 3) > 4 { println("+") }
+  else { println("-") }
+
+}
+

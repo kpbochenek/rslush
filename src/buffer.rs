@@ -1,5 +1,6 @@
 
 pub struct Buffer {
+    pub file_name: String,
     pub lines: Vec<String>,
     pub cursor: Cursor,
 }
@@ -17,6 +18,16 @@ pub enum Direction {
 }
 
 impl Buffer {
+    pub fn new(text: String, file_name: String) -> Buffer {
+        let lines = text.lines().map(|l| { l.to_string() }).collect();
+        Buffer { file_name, lines, cursor: Cursor { row: 0, col: 0 } }
+    }
+
+    pub fn update(&mut self, text: String, file_name: String) {
+        self.lines = text.lines().map(|l| { l.to_string() }).collect();
+        self.file_name = file_name;
+        self.cursor = Cursor { row: 0, col: 0 };
+    }
 
     pub fn move_cursor(&mut self, dir: Direction) {
         match dir {

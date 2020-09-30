@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::prelude::*;
 
-pub fn open_test() -> String {
-    let mut file = File::open("src/example.kis").unwrap();
+pub fn open_file(path_name: &str) -> String {
+    let mut file = File::open(path_name).unwrap();
 
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();

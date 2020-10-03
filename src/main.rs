@@ -8,18 +8,22 @@ use buffer::*;
 use sdl2::pixels::Color;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use std::time::Instant;
 use std::{time::Duration, path::PathBuf};
 use sdl2::rect::Rect;
 
-use std::{fs};
+use std::fs;
 
 const BLACK: Color = Color::RGB(0, 0, 0);
 const WHITE: Color = Color::RGB(255, 255, 255);
 const BLUE: Color = Color::RGB(30,144,255);
 const BROWN: Color = Color::RGB(205,133,63);
+const GRAY: Color = Color::RGB(169,169,169);
+const DIM_GRAY: Color = Color::RGB(105,105,105);
+const SLATE: Color = Color::RGB(47,79,79);
 
-const startx: u32 = 0;
-const starty: u32 = 0;
+const STARTX: u32 = 0;
+const STARTY: u32 = 0;
 
 #[derive(PartialEq)]
 enum InputMode {
@@ -42,6 +46,10 @@ pub fn main() {
 
     let mut buffer: Buffer = Buffer::new(file_text, file_name.to_string());
 
+    let mut second_now = Instant::now(); 
+    let mut fps_tick: u32 = 0;
+    let mut fps_draw: String = String::from("?");
+    
     let mut file_explorer = FileExplorer::new();
 
     let mut input_mode: InputMode = InputMode::Normal;
@@ -62,6 +70,13 @@ pub fn main() {
     canvas.present();
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
+	let tnow = Instant::now();
+	fps_tick += 1;
+	if tnow.duration_since(second_now).as_millis() >= 1000 {
+	    fps_draw = format!("FPS {}", fps_tick);
+	    second_now = tnow;
+	    fps_tick = 0;
+	}
         let (windowx, windowy) = canvas.window().size();
         canvas.set_draw_color(BLACK);
         canvas.clear();
@@ -217,7 +232,7 @@ pub fn main() {
                 let rendering = dejavu.render(l);
                 let surface = rendering.blended(WHITE).unwrap();
                 let texture = surface.as_texture(&texture_creator).unwrap();
-                canvas.copy(&texture, None, sdl2::rect::Rect::new(startx as i32 , (starty + surface.height() * i) as i32, surface.width(), surface.height())).unwrap();
+                canvas.copy(&texture, None, sdl2::rect::Rect::new(STARTX as i32 , (STARTY + surface.height() * i) as i32, surface.width(), surface.height())).unwrap();
             }
             i += 1;
         };
@@ -244,25 +259,57 @@ pub fn main() {
         let rendering = dejavu.render(&txt);
         let surface = rendering.blended(WHITE).unwrap();
         let texture = surface.as_texture(&texture_creator).unwrap();
-        canvas.copy(&texture, None, sdl2::rect::Rect::new(modeline_from.0 , modeline_from.1, surface.width(), surface.height())).unwrap();
+        canvas.copy(&texture, None, Rect::new(modeline_from.0 , modeline_from.1, surface.width(), surface.height())).unwrap();
+
+        let rendering = dejavu.render(&fps_draw);
+        let surface = rendering.blended(WHITE).unwrap();
+        let texture = surface.as_texture(&texture_creator).unwrap();
+        canvas.copy(&texture, None, Rect::new(windowx as i32 - 60, modeline_from.1, surface.width(), surface.height())).unwrap();
 
         if file_explorer.active {
-            let mut i = 0;
-            for e in &file_explorer.proposals {
-                let rendering = dejavu.render(e.as_str());
-                let surface = rendering.blended(WHITE).unwrap();
-                let texture = surface.as_texture(&texture_creator).unwrap();
-                let r = sdl2::rect::Rect::new(10, 400 + i, surface.width(), surface.height());
-                canvas.copy(&texture, None, r).unwrap();
-                i += char_size_y as i32;
-            }
+	    let draw_area: Rect = Rect::new(10, windowy as i32 / 2, windowx - 20, windowy / 2 - 2 * char_size_y);
+	    let items_space_y = draw_area.height() - char_size_y;
+	    let items_count = items_space_y / char_size_y;
 
-            let prompt = format!("[{}] > {}", &file_explorer.current_directory_name , &file_explorer.part);
+	    // draw area
+	    canvas.set_draw_color(DIM_GRAY);
+	    canvas.fill_rect(draw_area).unwrap();
+	    canvas.set_draw_color(GRAY);
+	    canvas.draw_rect(draw_area).unwrap();
+
+	    // draw prompt
+            let prompt = format!("[{}/{}] ({})> {}",
+				 &file_explorer.filtered.len(),
+				 &file_explorer.proposals.len(),
+				 &file_explorer.current_directory_name,
+				 &file_explorer.part);
             let rendering = dejavu.render(&prompt);
             let surface = rendering.blended(WHITE).unwrap();
             let texture = surface.as_texture(&texture_creator).unwrap();
-            let r = sdl2::rect::Rect::new(10, 400 + i, surface.width(), surface.height());
+            let mut r = Rect::new(draw_area.x(), draw_area.y() + draw_area.height() as i32 - char_size_y as i32, surface.width(), surface.height());
             canvas.copy(&texture, None, r).unwrap();
+	    r.set_width(draw_area.width());
+	    canvas.draw_rect(r).unwrap();
+	    
+	    // draw items
+            let mut i: i32 = r.y - char_size_y as i32;
+
+	    let mut id = 0;
+            for e in file_explorer.get_items(items_count as usize) {
+		if id == file_explorer.selected {
+		    canvas.set_draw_color(SLATE);
+		    canvas.fill_rect(Rect::new(10, i, draw_area.width(), char_size_y)).unwrap();
+		}
+                let rendering = dejavu.render(e.0.as_str());
+                let surface = rendering.blended(WHITE).unwrap();
+                let texture = surface.as_texture(&texture_creator).unwrap();
+                let r = Rect::new(15, i, surface.width(), surface.height());
+                canvas.copy(&texture, None, r).unwrap();
+
+                i -= char_size_y as i32;
+		id += 1;
+            }
+
         }
 
         canvas.present();
@@ -275,31 +322,53 @@ struct FileExplorer {
     current_directory: PathBuf,
     current_directory_name: String,
     active: bool,
+    selected: u32,
     part: String,
-    proposals: Vec<String>,
+    proposals: Vec<(String, String)>,
+    filtered: Vec<(String, String)>,
 }
 
 impl FileExplorer {
     pub fn new() -> FileExplorer {
-        let current_directory: PathBuf = PathBuf::from(".");
-        let (name, proposals) = current_directory.to_str().map(|d| (d, FileExplorer::list_files(d))).unwrap_or(("unknown", Vec::new()));
+        let current_directory: PathBuf = fs::canonicalize(PathBuf::from(".")).unwrap();
+        let (name, proposals) = current_directory.to_str()
+	    .map(|d| (d, FileExplorer::list_files(d)))
+	    .unwrap_or(("unknown", Vec::new()));
         FileExplorer {
             current_directory: PathBuf::from("."),
             current_directory_name: name.to_string(),
+	    selected: 0,
             active: false,
             part: String::from(""),
+	    filtered: proposals.clone(),
             proposals,
         }
     }
 
     pub fn insert_character(&mut self, c: &str) {
         self.part += c;
+	self.refilter();
     }
 
+    fn refilter(&mut self) {
+	self.filtered = self.proposals.iter().filter(|s| self.part.is_empty() || s.0.contains(&self.part)).cloned().collect();
+	if self.selected > self.filtered.len() as u32 {
+	    self.selected = 0;
+	}
+    }
+
+    pub fn get_items(&mut self, size: usize) -> Vec<(String, String)> {
+	if size < self.filtered.len() {
+	    self.filtered.split_at(size).0.to_vec()
+	} else {
+	    self.filtered.to_vec()
+	}
+    }
 
     pub fn delete_character(&mut self) {
         if !self.part.is_empty() {
-        self.part.remove(self.part.len()-1);
+            self.part.remove(self.part.len()-1);
+	    self.refilter();
         }
     }
 
@@ -315,6 +384,7 @@ impl FileExplorer {
             self.current_directory_name = name.to_string();
             self.proposals = proposals;
             self.part = String::from("");
+	    self.refilter();
             None
         } else if cwd.as_path().is_dir() {
             self.current_directory.push(&self.part);
@@ -322,15 +392,18 @@ impl FileExplorer {
             self.current_directory_name = name.to_string();
             self.proposals = proposals;
             self.part = String::from("");
+	    self.refilter();
             None
         } else {
             None
         }
     }
 
-    fn list_files(directory: &str) -> Vec<String> {
+    fn list_files(directory: &str) -> Vec<(String, String)> {
         fs::read_dir(directory).unwrap().filter_map(|e| {
-            e.unwrap().path().to_str().map(|s| s.to_string())
+	    let el = e.unwrap();
+	    let filename = el.file_name().into_string().unwrap();
+            el.path().to_str().map(|p| (filename, p.to_string()))
         }).collect()
     }
 

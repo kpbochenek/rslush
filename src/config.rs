@@ -1,5 +1,6 @@
 use sdl2::pixels::Color;
 
+
 struct UserConfig {
     foreground_color: Color,
 }

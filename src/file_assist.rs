@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::Read;
 
 pub fn open_file(path_name: &str) -> String {
     let mut file = File::open(path_name).unwrap();

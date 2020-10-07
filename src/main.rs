@@ -2,6 +2,7 @@ extern crate sdl2;
 
 mod buffer;
 mod file_assist;
+mod file_picker;
 
 use buffer::*;
 
@@ -10,10 +11,10 @@ use sdl2::keyboard::Keycode;
 use sdl2::keyboard::Mod;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use std::time::Duration;
 use std::time::Instant;
-use std::{path::PathBuf, time::Duration};
 
-use std::fs;
+use file_picker::*;
 
 const BLACK: Color = Color::RGB(0, 0, 0);
 const WHITE: Color = Color::RGB(255, 255, 255);
@@ -52,7 +53,9 @@ pub fn main() {
     let mut fps_tick: u32 = 0;
     let mut fps_draw: String = String::from("?");
 
-    let mut file_explorer = FileExplorer::new(".");
+    let mut display_from: usize = 0;
+
+    let mut file_explorer = FilePicker::new(".");
 
     let mut input_mode: InputMode = InputMode::Normal;
 
@@ -98,7 +101,7 @@ pub fn main() {
                     if ctrl && keycode == Some(Keycode::O) {
                         file_explorer.activate();
                     } else {
-                        if file_explorer.active {
+                        if file_explorer.is_active() {
                             if ctrl {
                                 match keycode {
                                     Some(Keycode::J) => file_explorer.selection_down(),
@@ -246,32 +249,42 @@ pub fn main() {
             }
         }
 
-        let mut i = 0;
-        for l in &buffer.lines {
-            if l.len() > 0 {
-                let rendering = dejavu.render(l);
-                let surface = rendering.blended(WHITE).unwrap();
-                let texture = surface.as_texture(&texture_creator).unwrap();
-                canvas
-                    .copy(
-                        &texture,
-                        None,
-                        sdl2::rect::Rect::new(
-                            STARTX as i32,
-                            (STARTY + surface.height() * i) as i32,
-                            surface.width(),
-                            surface.height(),
-                        ),
-                    )
-                    .unwrap();
-            }
+        let rows_displayed: usize = ((windowy - char_size_y) / char_size_y) as usize;
+        let display_to = usize::min(display_from + rows_displayed, buffer.lines.len() - 1);
+        let mut i: u32 = 0;
+        for l in &buffer.lines[display_from..display_to] {
+            let lne = format!("{:3}|{}", i + display_from as u32, l);
+            let rendering = dejavu.render(&lne);
+            let surface = rendering.blended(WHITE).unwrap();
+            let texture = surface.as_texture(&texture_creator).unwrap();
+            canvas
+                .copy(
+                    &texture,
+                    None,
+                    Rect::new(
+                        STARTX as i32,
+                        (STARTY + surface.height() * i) as i32,
+                        surface.width(),
+                        surface.height(),
+                    ),
+                )
+                .unwrap();
             i += 1;
+        }
+
+        if (buffer.cursor.row as usize) < display_from {
+            display_from = buffer.cursor.row as usize;
+        }
+        if buffer.cursor.row as usize > display_to - 1
+            && buffer.cursor.row < buffer.lines.len() as u32 - 1
+        {
+            display_from += (buffer.cursor.row as usize - (display_to - 1)) as usize;
         }
 
         canvas.set_draw_color(BLUE);
         let from = (
-            (char_size_x * buffer.cursor.col) as i32,
-            (char_size_y * buffer.cursor.row) as i32,
+            (char_size_x * buffer.cursor.col) as i32 + 4 * char_size_x as i32,
+            (char_size_y * buffer.cursor.row - char_size_y * display_from as u32) as i32,
         );
         if input_mode == InputMode::Insert {
             let to = (from.0, from.1 + char_size_y as i32);
@@ -331,7 +344,7 @@ pub fn main() {
             )
             .unwrap();
 
-        if file_explorer.active {
+        if file_explorer.is_active() {
             let draw_area: Rect = Rect::new(
                 10,
                 windowy as i32 / 2,
@@ -348,12 +361,13 @@ pub fn main() {
             canvas.draw_rect(draw_area).unwrap();
 
             // draw prompt
+            let stats = file_explorer.selection_stats();
             let prompt = format!(
                 "[{}/{}] ({})> {}",
-                &file_explorer.filtered.len(),
-                &file_explorer.proposals.len(),
-                &file_explorer.current_directory.name,
-                &file_explorer.part
+                stats.1,
+                stats.0,
+                file_explorer.current_directory_name(),
+                file_explorer.inserted_part()
             );
             let rendering = dejavu.render(&prompt);
             let surface = rendering.blended(WHITE).unwrap();
@@ -373,7 +387,7 @@ pub fn main() {
 
             let mut id = 0;
             for e in file_explorer.get_items(items_count as usize) {
-                if id == file_explorer.selected {
+                if id == file_explorer.selected_line() {
                     canvas.set_draw_color(SLATE);
                     canvas
                         .fill_rect(Rect::new(10, i, draw_area.width(), char_size_y))
@@ -392,159 +406,5 @@ pub fn main() {
 
         canvas.present();
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
-    }
-}
-
-#[derive(Clone)]
-struct FileEntity {
-    name: String,
-    path: PathBuf,
-}
-
-impl FileEntity {
-    // fn new(name: String, path: PathBuf) -> FileEntity {
-    //     FileEntity { name, path }
-    // }
-
-    fn from_path(path: PathBuf) -> FileEntity {
-        let name = String::from(path.to_str().unwrap());
-        FileEntity { name, path }
-    }
-}
-
-struct FileExplorer {
-    current_directory: FileEntity,
-    active: bool,
-    selected: u32,
-    part: String,
-    proposals: Vec<FileEntity>,
-    filtered: Vec<FileEntity>,
-}
-
-impl FileExplorer {
-    pub fn new(current: &str) -> FileExplorer {
-        let path: PathBuf = fs::canonicalize(PathBuf::from(current)).unwrap();
-        FileExplorer {
-            current_directory: FileEntity::from_path(path),
-            selected: 0,
-            active: false,
-            part: String::from(""),
-            filtered: Vec::new(),
-            proposals: Vec::new(),
-        }
-    }
-
-    pub fn activate(&mut self) {
-        self.active = true;
-        self.change_dir(self.current_directory.path.clone());
-    }
-
-    pub fn deactivate(&mut self) {
-        self.active = false;
-        self.proposals = Vec::new();
-        self.filtered = Vec::new();
-    }
-
-    fn change_dir(&mut self, new_dir: PathBuf) {
-        self.current_directory = FileEntity::from_path(new_dir);
-        self.part = String::from("");
-	self.selected = 0;
-        self.refresh_proposals_filtered();
-    }
-
-    pub fn insert_character(&mut self, c: &str) {
-        self.part += c;
-        self.refilter();
-    }
-
-    fn refresh_proposals_filtered(&mut self) {
-        self.proposals = self
-            .current_directory
-            .path
-            .to_str()
-            .map(|d| FileExplorer::list_files(d))
-            .unwrap_or(Vec::new());
-        self.filtered = self.proposals.iter().map(|e| e.clone()).collect();
-    }
-
-    fn refilter(&mut self) {
-        self.filtered = self
-            .proposals
-            .iter()
-            .filter(|s| self.part.is_empty() || s.name.contains(&self.part))
-            .cloned()
-            .collect();
-        if self.selected > self.filtered.len() as u32 {
-            self.selected = 0;
-        }
-    }
-
-    pub fn get_items(&mut self, size: usize) -> Vec<FileEntity> {
-        if size < self.filtered.len() {
-            self.filtered.split_at(size).0.to_vec()
-        } else {
-            self.filtered.to_vec()
-        }
-    }
-
-    pub fn selection_up(&mut self) {
-        if self.filtered.len() as u32 > self.selected + 1 {
-            self.selected += 1;
-        }
-    }
-
-    pub fn selection_down(&mut self) {
-        if self.selected > 0 {
-            self.selected -= 1;
-        }
-    }
-
-    pub fn delete_segment(&mut self) {
-        let mut new_dir = self.current_directory.path.clone();
-        new_dir.pop();
-        self.change_dir(new_dir);
-    }
-
-    pub fn delete_character(&mut self) {
-        if !self.part.is_empty() {
-            self.part.pop();
-            self.refilter();
-        }
-    }
-
-    pub fn confirm_selection(&mut self) -> Option<String> {
-        let cwd = self.filtered.get(self.selected as usize).map(|e| e.clone());
-        match cwd {
-            Some(file_entry) => {
-                let path = file_entry.path.as_path();
-                if path.is_file() {
-                    println!("Opening file {:?}", path.to_str());
-                    path.to_str().map(|s| s.to_string())
-                } else if path.is_dir() {
-                    println!("Goto directory {:?}", path.to_str());
-                    self.change_dir(file_entry.path.clone());
-                    None
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    pub fn quit(&mut self) {
-        self.active = false;
-    }
-
-    // FileEntity related methods
-
-    fn list_files(directory: &str) -> Vec<FileEntity> {
-        match fs::read_dir(directory) {
-            Ok(dir_entry) => {
-                let c: Vec<fs::DirEntry> = dir_entry.filter_map(|e| e.ok()).collect();
-                c.iter().map(|x| FileEntity::from_path(x.path())).collect()
-            }
-            Err(_) => Vec::new(),
-        }
     }
 }

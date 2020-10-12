@@ -2,6 +2,7 @@ pub struct Buffer {
     pub file_name: String,
     pub lines: Vec<String>,
     pub cursor: Cursor,
+    pub modified: bool,
 }
 
 pub struct Cursor {
@@ -23,13 +24,22 @@ impl Buffer {
             file_name,
             lines,
             cursor: Cursor { row: 0, col: 0 },
+            modified: false,
         }
     }
 
-    pub fn update(&mut self, text: String, file_name: String) {
+    pub fn update(&mut self, text: String, file_name: &String) {
         self.lines = text.lines().map(|l| l.to_string()).collect();
-        self.file_name = file_name;
+        self.file_name = file_name.clone();
         self.cursor = Cursor { row: 0, col: 0 };
+    }
+
+    pub fn saved(&mut self) {
+        self.modified = false;
+    }
+
+    pub fn move_cursor_beginning_line(&mut self) {
+        self.cursor.col = 0;
     }
 
     pub fn move_cursor(&mut self, dir: Direction) {
@@ -61,18 +71,26 @@ impl Buffer {
         }
     }
 
+    pub fn enter_newline(&mut self) {
+        let cur = self.lines[self.cursor.row as usize].split_off(self.cursor.col as usize);
+        self.lines.insert(self.cursor.row as usize + 1, cur);
+        self.modified = true;
+    }
+
     pub fn insert_newline_below(&mut self) {
         self.lines
             .insert(self.cursor.row as usize + 1, String::from(""));
+        self.modified = true;
     }
 
     pub fn delete_line(&mut self) {
         if self.lines.len() > 1 {
             self.lines.remove(self.cursor.row as usize);
+            self.modified = true;
         }
     }
 
-    pub fn insert_character(&mut self, c: char) {
+    pub fn insert_char(&mut self, c: char) {
         println!(
             "Update row={},column={}={}",
             self.cursor.row, self.cursor.col, c
@@ -81,6 +99,7 @@ impl Buffer {
         let (l, r) = line.split_at(self.cursor.col as usize);
         self.lines[self.cursor.row as usize] = format!("{}{}{}", l, c, r);
         self.move_cursor(Direction::Right);
+        self.modified = true;
     }
 
     pub fn delete_current_character(&mut self) {
@@ -88,6 +107,7 @@ impl Buffer {
             let line = self.lines.get_mut(self.cursor.row as usize).unwrap();
             let (l, r) = line.split_at(self.cursor.col as usize);
             self.lines[self.cursor.row as usize] = format!("{}{}", l, &r[1..]);
+            self.modified = true;
         }
     }
 }

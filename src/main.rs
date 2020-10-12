@@ -362,7 +362,7 @@ pub fn main() {
             (buffer.cursor.row * 100 / buffer.lines.len() as u32)
         );
         if buffer.modified {
-            txt += " *M*! ";
+            txt += " *M* ";
         }
         txt += &format!(" [{}] ", buffer.file_name);
         let rendering = dejavu.render(&txt);

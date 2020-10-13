@@ -1,0 +1,16 @@
+{
+  "buffer_fg": "#CDCFC4",
+  "buffer_bg": "#1B2B34",
+  "cursor": "48cae4",
+  "statusline_fg": "#98C379",
+  "statusline_bg": "#282C34",
+  "filepicker_fg": "#98C379",
+  "filepicker_bg": "#282C34",
+  "filepicker_border": "#61AFEF",
+  "filepicker_selection": "#343D46",
+  "itempicker_fg": "#98C379",
+  "itempicker_bg": "#282C34",
+  "itempicker_border": "#61AFEF",
+  "itempicker_selection": "#343D46"
+}
+

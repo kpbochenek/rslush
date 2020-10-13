@@ -20,10 +20,10 @@ struct ColorSchemeJson {
     pub filepicker_bg: String,
     pub filepicker_border: String,
     pub filepicker_selection: String,
-    pub actions_fg: String,
-    pub actions_bg: String,
-    pub actions_border: String,
-    pub actions_selection: String,
+    pub itempicker_fg: String,
+    pub itempicker_bg: String,
+    pub itempicker_border: String,
+    pub itempicker_selection: String,
 }
 
 pub struct ColorScheme {
@@ -36,10 +36,10 @@ pub struct ColorScheme {
     pub filepicker_bg: Color,
     pub filepicker_border: Color,
     pub filepicker_selection: Color,
-    pub actions_fg: Color,
-    pub actions_bg: Color,
-    pub actions_border: Color,
-    pub actions_selection: Color,
+    pub itempicker_fg: Color,
+    pub itempicker_bg: Color,
+    pub itempicker_border: Color,
+    pub itempicker_selection: Color,
 }
 
 pub const DEFAULT_CS: ColorScheme = ColorScheme {
@@ -52,14 +52,14 @@ pub const DEFAULT_CS: ColorScheme = ColorScheme {
     filepicker_bg: DIM_GRAY,
     filepicker_border: SLATE,
     filepicker_selection: SLATE,
-    actions_fg: WHITE,
-    actions_bg: DIM_GRAY,
-    actions_border: SLATE,
-    actions_selection: SLATE,
+    itempicker_fg: WHITE,
+    itempicker_bg: DIM_GRAY,
+    itempicker_border: SLATE,
+    itempicker_selection: SLATE,
 };
 
 impl ColorScheme {
-    pub fn read_from_file(file_path: String) -> Result<ColorScheme, String> {
+    pub fn read_from_file(file_path: &String) -> Result<ColorScheme, String> {
         let file = std::fs::read_to_string(file_path).map_err(|e| e.to_string())?;
         let cs_json = serde_json::from_str::<ColorSchemeJson>(&file).map_err(|e| e.to_string())?;
         ColorScheme::json_to_cs(&cs_json)
@@ -76,10 +76,10 @@ impl ColorScheme {
             filepicker_bg: string_to_hex_color(&csj.filepicker_bg)?,
             filepicker_border: string_to_hex_color(&csj.filepicker_border)?,
             filepicker_selection: string_to_hex_color(&csj.filepicker_selection)?,
-            actions_fg: string_to_hex_color(&csj.actions_fg)?,
-            actions_bg: string_to_hex_color(&csj.actions_bg)?,
-            actions_border: string_to_hex_color(&csj.actions_border)?,
-            actions_selection: string_to_hex_color(&csj.actions_selection)?,
+            itempicker_fg: string_to_hex_color(&csj.itempicker_fg)?,
+            itempicker_bg: string_to_hex_color(&csj.itempicker_bg)?,
+            itempicker_border: string_to_hex_color(&csj.itempicker_border)?,
+            itempicker_selection: string_to_hex_color(&csj.itempicker_selection)?,
         })
     }
 }

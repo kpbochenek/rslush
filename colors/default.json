@@ -8,9 +8,9 @@
   "filepicker_bg": "424960",
   "filepicker_border": "425860",
   "filepicker_selection": "306b7a",
-  "actions_fg": "e2efe1",
-  "actions_bg": "0d3d2d",
-  "actions_border": "0e0a14",
-  "actions_selection": "336d07"
+  "itempicker_fg": "e2efe1",
+  "itempicker_bg": "0d3d2d",
+  "itempicker_border": "0e0a14",
+  "itempicker_selection": "336d07"
 }
 

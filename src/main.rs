@@ -4,9 +4,11 @@ mod buffer;
 mod config;
 mod file_assist;
 mod file_picker;
+mod item_picker;
 
 use buffer::*;
 use config::*;
+use ItemPickerHandler::*;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -17,6 +19,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use file_picker::*;
+use item_picker::*;
 
 const STARTX: u32 = 0;
 const STARTY: u32 = 0;
@@ -30,13 +33,6 @@ enum InputMode {
 enum FilePickerAction {
     OpenFile,
     ChangeColorScheme,
-}
-
-struct Actions {
-    active: bool,
-    part: String,
-    selected: u32,
-    commands: Vec<CommandAction>,
 }
 
 enum CommandAction {
@@ -53,38 +49,62 @@ impl CommandAction {
     }
 }
 
-impl Actions {
-    pub fn new() -> Actions {
-        Actions {
-            active: false,
-            part: String::from(""),
-            selected: 0,
-            commands: vec![CommandAction::OpenFile, CommandAction::ChangeColorScheme],
+enum ItemPickerHandler {
+    ChangeColorScheme(Vec<String>),
+    ExecuteCommand,
+}
+
+fn item_picker_action(item: Item, app: &mut App) {
+    println!("Executing action {}", item.name);
+    match app.item_action.as_ref() {
+        Some(ChangeColorScheme(colors)) => {
+            let cs_path = format!("./colors/{}", colors[item.id].clone());
+            app.set_color_scheme(cs_path);
+        }
+        Some(ExecuteCommand) => (),
+        _ => (),
+    }
+}
+
+struct App {
+    // ** ColorScheme **
+    pub cs: ColorScheme,
+    pub cs_path: Option<String>,
+
+    // ** ItemPicker **
+    pub item_picker: ItemPicker,
+    pub item_action: Option<ItemPickerHandler>,
+}
+
+impl App {
+    fn new() -> App {
+        App {
+            cs: DEFAULT_CS,
+            cs_path: None,
+            item_picker: ItemPicker::new(),
+            item_action: None,
         }
     }
 
-    pub fn get_items(&self) -> &Vec<CommandAction> {
-        &self.commands
+    pub fn reload_color_scheme(&mut self) {
+        println!("Reloading color scheme {:?}", &self.cs_path);
+        match &self.cs_path {
+            Some(scheme_path) => match ColorScheme::read_from_file(&scheme_path) {
+                Ok(color_scheme) => self.cs = color_scheme,
+                Err(msg) => display_message(msg),
+            },
+            None => println!("Color scheme not loaded from file"),
+        }
     }
 
-    pub fn activate(&mut self) {
-        self.active = true;
-    }
-
-    pub fn selected_line(&self) -> u32 {
-        self.selected
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.active
-    }
-
-    pub fn deactivate(&mut self) {
-        self.active = false;
-    }
-
-    pub fn inserted_part(&self) -> &String {
-        &self.part
+    pub fn set_color_scheme(&mut self, filepath: String) {
+        match ColorScheme::read_from_file(&filepath) {
+            Ok(color_scheme) => {
+                self.cs = color_scheme;
+                self.cs_path = Some(filepath);
+            }
+            Err(msg) => display_message(msg),
+        }
     }
 }
 
@@ -102,7 +122,8 @@ pub fn main() {
     let file_name = "./src/example.kis";
     let file_text = file_assist::open_file(file_name);
 
-    let mut cs = DEFAULT_CS;
+    let mut app = App::new();
+    app.set_color_scheme(String::from("./colors/oceanic.json"));
 
     let mut buffer: Buffer = Buffer::new(file_text, file_name.to_string());
 
@@ -115,12 +136,12 @@ pub fn main() {
     let mut display_from: usize = 0;
 
     let mut file_explorer = FilePicker::new(".");
-    let mut actions = Actions::new();
 
     let mut input_mode: InputMode = InputMode::Normal;
 
     let mut canvas = window.into_canvas().build().unwrap();
-    let texture_creator = canvas.texture_creator();
+    let texture_creator: sdl2::render::TextureCreator<sdl2::video::WindowContext> =
+        canvas.texture_creator();
 
     let ttf_context = sdl2::ttf::init().unwrap();
     let mut dejavu = ttf_context.load_font("./src/Roboto.ttf", 13).unwrap();
@@ -143,7 +164,7 @@ pub fn main() {
             fps_tick = 0;
         }
         let (windowx, windowy) = canvas.window().size();
-        canvas.set_draw_color(cs.buffer_bg);
+        canvas.set_draw_color(app.cs.buffer_bg);
         canvas.clear();
         for event in event_pump.poll_iter() {
             match event {
@@ -165,8 +186,22 @@ pub fn main() {
                     } else if ctrl && keycode == Some(Keycode::P) {
                         file_explorer.activate();
                         fp_action = FilePickerAction::ChangeColorScheme;
+                    } else if ctrl && keycode == Some(Keycode::B) {
+                        app.reload_color_scheme();
+                    } else if ctrl && keycode == Some(Keycode::N) {
+                        // change color scheme
+                        let schemes = file_assist::list_color_schemes();
+                        let items = schemes
+                            .iter()
+                            .enumerate()
+                            .map(|(i, s)| Item::new(i, s.clone()))
+                            .collect();
+                        app.item_picker.activate(items);
+                        app.item_action = Some(ChangeColorScheme(schemes));
                     } else if ctrl && keycode == Some(Keycode::M) {
-                        actions.activate();
+                        // execute command
+                        app.item_picker.activate(vec![]);
+                        app.item_action = Some(ExecuteCommand);
                     } else {
                         if file_explorer.is_active() {
                             if ctrl {
@@ -182,10 +217,7 @@ pub fn main() {
                                                     open_file(&mut buffer, &filename)
                                                 }
                                                 FilePickerAction::ChangeColorScheme => {
-                                                    match change_color_scheme(filename) {
-                                                        Ok(color_scheme) => cs = color_scheme,
-                                                        Err(msg) => display_message(msg),
-                                                    }
+                                                    app.set_color_scheme(filename)
                                                 }
                                             }
                                         }
@@ -236,10 +268,7 @@ pub fn main() {
                                                     open_file(&mut buffer, &filename)
                                                 }
                                                 FilePickerAction::ChangeColorScheme => {
-                                                    match change_color_scheme(filename) {
-                                                        Ok(color_scheme) => cs = color_scheme,
-                                                        Err(msg) => display_message(msg),
-                                                    }
+                                                    app.set_color_scheme(filename)
                                                 }
                                             }
                                         }
@@ -249,10 +278,13 @@ pub fn main() {
                                     _ => (),
                                 }
                             }
-                        } else if actions.is_active() {
-                            match keycode {
-                                Some(Keycode::Escape) => actions.deactivate(),
-                                _ => (),
+                        } else if app.item_picker.is_active() {
+                            if let Some(key) = &keycode {
+                                app.item_picker.try_handle_key(key, shift, ctrl);
+                                if let Some(item) = app.item_picker.get_accepted() {
+                                    item_picker_action(item, &mut app);
+                                    app.item_picker.deactivate();
+                                }
                             }
                         } else if input_mode == InputMode::Insert {
                             if keycode == Some(Keycode::Escape) {
@@ -305,7 +337,7 @@ pub fn main() {
         for l in &buffer.lines[display_from..display_to] {
             let lne = format!("{:3}|{}", i + display_from as u32, l);
             let rendering = dejavu.render(&lne);
-            let surface = rendering.blended(cs.buffer_fg).unwrap();
+            let surface = rendering.blended(app.cs.buffer_fg).unwrap();
             let texture = surface.as_texture(&texture_creator).unwrap();
             canvas
                 .copy(
@@ -331,7 +363,7 @@ pub fn main() {
             display_from += (buffer.cursor.row as usize - (display_to - 1)) as usize;
         }
 
-        canvas.set_draw_color(cs.cursor);
+        canvas.set_draw_color(app.cs.cursor);
         let from = (
             (char_size_x * buffer.cursor.col) as i32 + 4 * char_size_x as i32,
             (char_size_y * buffer.cursor.row - char_size_y * display_from as u32) as i32,
@@ -345,10 +377,18 @@ pub fn main() {
         }
 
         // draw modeline
-        canvas.set_draw_color(cs.statusline_bg);
+        canvas.set_draw_color(app.cs.statusline_bg);
         let modeline_from = (0, (windowy - char_size_y) as i32);
         let modeline_to = (windowx as i32, (windowy - char_size_y) as i32);
         canvas.draw_line(modeline_from, modeline_to).unwrap();
+        canvas
+            .fill_rect(Rect::new(
+                modeline_from.0,
+                modeline_from.1,
+                windowx,
+                char_size_y,
+            ))
+            .unwrap();
         let mut txt = String::from(if input_mode == InputMode::Insert {
             " INSERT"
         } else {
@@ -366,7 +406,7 @@ pub fn main() {
         }
         txt += &format!(" [{}] ", buffer.file_name);
         let rendering = dejavu.render(&txt);
-        let surface = rendering.blended(cs.statusline_fg).unwrap();
+        let surface = rendering.blended(app.cs.statusline_fg).unwrap();
         let texture = surface.as_texture(&texture_creator).unwrap();
         canvas
             .copy(
@@ -382,7 +422,7 @@ pub fn main() {
             .unwrap();
 
         let rendering = dejavu.render(&fps_draw);
-        let surface = rendering.blended(cs.statusline_fg).unwrap();
+        let surface = rendering.blended(app.cs.statusline_fg).unwrap();
         let texture = surface.as_texture(&texture_creator).unwrap();
         canvas
             .copy(
@@ -408,9 +448,9 @@ pub fn main() {
             let items_count = items_space_y / char_size_y;
 
             // draw area
-            canvas.set_draw_color(cs.filepicker_bg);
+            canvas.set_draw_color(app.cs.filepicker_bg);
             canvas.fill_rect(draw_area).unwrap();
-            canvas.set_draw_color(cs.filepicker_border);
+            canvas.set_draw_color(app.cs.filepicker_border);
             canvas.draw_rect(draw_area).unwrap();
 
             // draw prompt
@@ -423,7 +463,7 @@ pub fn main() {
                 file_explorer.inserted_part()
             );
             let rendering = dejavu.render(&prompt);
-            let surface = rendering.blended(cs.filepicker_fg).unwrap();
+            let surface = rendering.blended(app.cs.filepicker_fg).unwrap();
             let texture = surface.as_texture(&texture_creator).unwrap();
             let mut r = Rect::new(
                 draw_area.x(),
@@ -441,13 +481,13 @@ pub fn main() {
             let mut id = 0;
             for e in file_explorer.get_items(items_count as usize) {
                 if id == file_explorer.selected_line() {
-                    canvas.set_draw_color(cs.filepicker_selection);
+                    canvas.set_draw_color(app.cs.filepicker_selection);
                     canvas
                         .fill_rect(Rect::new(10, i, draw_area.width(), char_size_y))
                         .unwrap();
                 }
                 let rendering = dejavu.render(e.name.as_str());
-                let surface = rendering.blended(cs.filepicker_fg).unwrap();
+                let surface = rendering.blended(app.cs.filepicker_fg).unwrap();
                 let texture = surface.as_texture(&texture_creator).unwrap();
                 let r = Rect::new(15, i, surface.width(), surface.height());
                 canvas.copy(&texture, None, r).unwrap();
@@ -456,53 +496,23 @@ pub fn main() {
                 id += 1;
             }
         }
-        if actions.is_active() {
+        if app.item_picker.is_active() {
             let draw_area: Rect = Rect::new(
                 20,
                 windowy as i32 / 2,
                 windowx - 40,
                 windowy / 2 - 2 * char_size_y,
             );
-            canvas.set_draw_color(cs.actions_bg);
-            canvas.fill_rect(draw_area).unwrap();
-            canvas.set_draw_color(cs.actions_border);
-            canvas.draw_rect(draw_area).unwrap();
-
-            // draw prompt
-            let prompt = format!(" Run: {}", actions.inserted_part());
-            let rendering = dejavu.render(&prompt);
-            let surface = rendering.blended(cs.filepicker_fg).unwrap();
-            let texture = surface.as_texture(&texture_creator).unwrap();
-            let mut r = Rect::new(
-                draw_area.x(),
-                draw_area.y() + draw_area.height() as i32 - char_size_y as i32,
-                surface.width(),
-                surface.height(),
+            ItemPickerDisplay::display(
+                &app.item_picker,
+                &mut canvas,
+                &app.cs,
+                draw_area,
+                char_size_x,
+                char_size_y,
+                &dejavu,
+                &texture_creator,
             );
-            canvas.copy(&texture, None, r).unwrap();
-            r.set_width(draw_area.width());
-            canvas.draw_rect(r).unwrap();
-
-            // draw items
-            let mut i: i32 = r.y - char_size_y as i32;
-
-            let mut id = 0;
-            for e in actions.get_items() {
-                if id == actions.selected_line() {
-                    canvas.set_draw_color(cs.actions_selection);
-                    canvas
-                        .fill_rect(Rect::new(10, i, draw_area.width(), char_size_y))
-                        .unwrap();
-                }
-                let rendering = dejavu.render(e.name());
-                let surface = rendering.blended(cs.actions_fg).unwrap();
-                let texture = surface.as_texture(&texture_creator).unwrap();
-                let r = Rect::new(15, i, surface.width(), surface.height());
-                canvas.copy(&texture, None, r).unwrap();
-
-                i -= char_size_y as i32;
-                id += 1;
-            }
         }
 
         canvas.present();
@@ -512,10 +522,6 @@ pub fn main() {
 
 fn open_file(buffer: &mut Buffer, filename: &String) {
     buffer.update(file_assist::open_file(&filename), filename);
-}
-
-fn change_color_scheme(filename: String) -> Result<ColorScheme, String> {
-    ColorScheme::read_from_file(filename)
 }
 
 fn display_message(msg: String) {

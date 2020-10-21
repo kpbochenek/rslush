@@ -2,6 +2,7 @@ extern crate sdl2;
 
 mod buffer;
 mod config;
+mod connect_metals;
 mod file_assist;
 mod file_picker;
 mod item_picker;
@@ -10,6 +11,7 @@ use buffer::*;
 use config::*;
 use ItemPickerHandler::*;
 
+use connect_metals::*;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::keyboard::Mod;
@@ -129,6 +131,8 @@ pub fn main() {
 
     let mut fp_action: FilePickerAction = FilePickerAction::OpenFile;
 
+    let mut metals: Option<MetalsProcess> = None;
+
     let mut second_now = Instant::now();
     let mut fps_tick: u32 = 0;
     let mut fps_draw: String = String::from("?");
@@ -163,6 +167,15 @@ pub fn main() {
             second_now = tnow;
             fps_tick = 0;
         }
+
+        match metals.as_mut() {
+            Some(mg) => {
+                mg.read();
+                ()
+            }
+            None => (),
+        }
+
         let (windowx, windowy) = canvas.window().size();
         canvas.set_draw_color(app.cs.buffer_bg);
         canvas.clear();
@@ -186,6 +199,10 @@ pub fn main() {
                     } else if ctrl && keycode == Some(Keycode::P) {
                         file_explorer.activate();
                         fp_action = FilePickerAction::ChangeColorScheme;
+                    } else if ctrl && keycode == Some(Keycode::Z) {
+                        let mut m = connect_metals::MetalsProcess::new();
+                        m.write(r#"{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"processId": 123, "rootUri": "/home/kpbochenek/vl/scala2-work/", capabilities: {}}}"#);
+                        metals = Some(m);
                     } else if ctrl && keycode == Some(Keycode::B) {
                         app.reload_color_scheme();
                     } else if ctrl && keycode == Some(Keycode::N) {
